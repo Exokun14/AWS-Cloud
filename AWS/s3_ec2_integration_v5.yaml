@@ -1,0 +1,87 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: "A sample S3 to EC2 integration using IAM"
+
+Parameters: 
+  bucketName:
+    Description: "S3 Bucket Name"
+    Type: String
+    Default: "jcj-aws-my-cfn-bucket"
+
+  keyPair:
+    Description: "EC2 KeyPair Name"
+    Type: String
+    Default: aws-trn-keypair
+
+  vpcID:
+    Description: "The VPC ID where to create the instance"
+    Type: String
+    Default: vpc-09ff7175bfe343648
+
+Resources: 
+  myS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties: 
+      BucketName: !Ref bucketName
+      Tags:
+        - Key:  AppName
+          Value: AWSTRN
+
+  myCfnLinuxServer:
+    Type: AWS::EC2::Instance
+    Properties:
+      KeyName: !Ref keyPair
+      ImageId: "ami-0ebfd941bbafe70c6"
+      InstanceType: t2.micro
+      IamInstanceProfile: !Ref myCfnLinuxInstanceProfile
+      SecurityGroupIds:
+        - !Ref myCfnLinuxSecGroup
+  
+  myCfnLinuxSecGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: cfn-linux-sec-group
+      GroupDescription: "Cloud formation Linux security group"
+      VpcID: !Ref vpcID
+      SecurityGroupIngress:
+        - CidrIP: 0.0.0.0/0
+          FromPort: 22
+          ToPort: 22
+          IpProtocol: tcp
+          Description: "Allow SSH"
+      SecurityGroupEgress:
+        - CidrIP: 0.0.0.0/0
+          IpProtocol: -1
+          Description: "Allow all egress"
+  
+  cfnS3EC2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument: 
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action: "sts:AssumeRole"
+            Principal:
+              Service: "ec2.amazonaws.com"
+
+      Policies:
+        - PolicyName: "cfn-s3-ec2-read-role"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - 
+                Effect: "Allow"
+                Action: 
+                  - "s3:GetObject"
+                  - "s3:ListBucket"
+                Resource: 
+                  - !GetAtt s3BucketArn
+                  - !Join [ "" , [!GetAtt myS3Bucket.Arn, "/*"] ]
+  
+  myCfnLinuxInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref cfnS3EC2Role
+  

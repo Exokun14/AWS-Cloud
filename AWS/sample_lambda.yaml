@@ -1,0 +1,21 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: "Sample Lambda Functions using AWS Cloud Formation"
+
+Resources: 
+  cfnMyLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: "Sample CFN Lambda Function"
+      FunctionName: cfnMyLambdaFunction
+      Role: arn:aws:iam::971422705459:role/S3FileCreateNotifierRole
+      Handler: index.lambda_handler
+      Runtime: python3.12
+      Code:
+        ZipFile: |
+          def lambda_handler(event, context):
+            print("Hello World")
+
+            return {
+              "statusCode": 200,
+              "body": "Ok!"
+            }

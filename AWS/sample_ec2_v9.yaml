@@ -1,0 +1,84 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: "Sample ec2 Server"
+
+Parameters: 
+  keyPair:
+    Description: "EC2 KeyPair Name"
+    Type: String
+    Default: aws-trn-keypair
+  vpcID:
+    Description: "The VPC ID where to create the instance"
+    Type: String
+    Default: vpc-09ff7175bfe343648
+  osType:
+    Description: "Linux operating system distribution type"
+    Type: String
+    Default: Ubuntu
+    AllowedValues:
+      - AmazonLinux
+      - Ubuntu
+      - Windows
+
+Mappings:
+  osMapping:
+    AmazonLinux:
+      amiId: "ami-0ebfd941bbafe70c6"
+    Ubuntu:
+      amiId: "ami-0e86e20dae9224db8"
+    Windows:
+      amiId: "ami-0888db1202897905c"
+
+Conditions:
+  isWindowsOS: !Equals
+    - !Ref osType
+    - "Windows"
+  isLinuxOS: !Not
+    - !Equals
+      - !Ref osType
+      - "Windows"
+
+Resources: 
+  myCfnLinuxServer:
+    Type: AWS::EC2::Instance
+    Properties:
+      KeyName: !Ref keyPair
+      ImageId: !FindInMap [osMapping, !Ref osType, "amiId"]
+      InstanceType: t2.micro
+      SecurityGroupIds:
+        - !If [isWindowsOS, !Ref myCfnWindowsSecGroup, !Ref myCfnLinuxSecGroup]
+  
+  myCfnLinuxSecGroup:
+    Type: AWS::EC2::SecurityGroup
+    Condition: isLinuxOS
+    Properties:
+      GroupName: cfn-linux-sec-group
+      GroupDescription: "Cloud formation Linux security group"
+      VpcID: !Ref vpcID
+      SecurityGroupIngress:
+        - CidrIP: 0.0.0.0/0
+          FromPort: 22
+          ToPort: 22
+          IpProtocol: tcp
+          Description: "Allow SSH"
+      SecurityGroupEgress:
+        - CidrIP: 0.0.0.0/0
+          IpProtocol: -1
+          Description: "Allow all egress"
+  
+  myCfnWindowsSecGroup:
+    Type: AWS::EC2::SecurityGroup
+    Condition: isWindowsOS
+    Properties:
+      GroupName: cfn-windows-sec-group
+      GroupDescription: "Cloud formation Windows security group"
+      VpcID: !Ref vpcID
+      SecurityGroupIngress:
+        - CidrIP: 0.0.0.0/0
+          FromPort: 3389
+          ToPort: 3389
+          IpProtocol: tcp
+          Description: "Allow RDP"
+      SecurityGroupEgress:
+        - CidrIP: 0.0.0.0/0
+          IpProtocol: -1
+          Description: "Allow all egress"
