@@ -1,0 +1,160 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: "A sample S3 to EC2 integration using IAM"
+
+Parameters: 
+  bucketArn:
+    Description: "S3 Bucket ARN"
+    Type: String
+    Default: arn:aws:s3:::jcj-aws-my-bucket
+
+  keyPair:
+    Description: "EC2 KeyPair Name"
+    Type: String
+    Default: aws-trn-keypair
+
+  vpcID:
+    Description: "The VPC ID where to create the instance"
+    Type: String
+    Default: vpc-09ff7175bfe343648
+
+Resources: 
+  myCfnLinuxServerNodeA:
+    Type: AWS::EC2::Instance
+    Properties:
+      KeyName: !Ref keyPair
+      ImageId: "ami-0ebfd941bbafe70c6"
+      InstanceType: t2.micro
+      IamInstanceProfile: !Ref myCfnLinuxInstanceProfile
+      UserData: !Base64 |
+        #!/bin/bash -ex
+        sudo yum update -y
+        sudo yum install httpd -y
+        sudo systemctl enable httpd
+        sudo systemctl start httpd
+        sudo aws s3 cp s3://jcj-aws-my-bucket/index_a.html /var/www/html/index.html
+      SecurityGroupIds:
+        - !Ref myCfnLinuxSecGroup
+      Tags:
+        - Key: Name
+          Value: "ec2-node-a"
+  myCfnLinuxServerNodeB:
+    Type: AWS::EC2::Instance
+    Properties:
+      KeyName: !Ref keyPair
+      ImageId: "ami-0ebfd941bbafe70c6"
+      InstanceType: t2.micro
+      IamInstanceProfile: !Ref myCfnLinuxInstanceProfile
+      UserData: !Base64 |
+        #!/bin/bash -ex
+        sudo yum update -y
+        sudo yum install httpd -y
+        sudo systemctl enable httpd
+        sudo systemctl start httpd
+        sudo aws s3 cp s3://jcj-aws-my-bucket/index_b.html /var/www/html/index.html
+      SecurityGroupIds:
+        - !Ref myCfnLinuxSecGroup
+      Tags:
+        - Key: Name
+          Value: "ec2-node-b"
+  
+  appServerListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      Port: 80
+      Protocol: HTTP
+      LoadBalancerArn: !Ref appServerLoadBalancer
+      DefaultActions: 
+        - Type: forward
+          TargetGroupArn: !Ref appServerTargetGroup
+  
+  appServerTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckEnabled: true
+      HealthCheckIntervalSeconds: 5
+      HealthCheckTimeoutSeconds: 2
+      HealthCheckPath: "/"
+      HealthCheckProtocol: HTTP
+      HealthyThresholdCount: 3
+      UnhealthyThresholdCount: 2
+      Name: appServerTargetGroup
+      Port: 80
+      Protocol: HTTP
+      IpAddressType: ipv4
+      VpcId: !Ref vpcID
+      TargetType: instance
+      Targets:
+        - Id: !GetAtt myCfnLinuxServerNodeA.InstanceId
+        - Id: !GetAtt myCfnLinuxServerNodeB.InstanceId
+
+  appServerLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      IpAddressType: ipv4
+      Name: appServerLoadBalancer
+      Scheme: internet-facing
+      SecurityGroups:
+        - !Ref myCfnLinuxSecGroup
+      Subnets:
+        - subnet-05564cdc6c24eff23
+        - subnet-09729f9bd4b34fae3
+        - subnet-0a05f4e3eed561e8f
+        - subnet-069d92b6cbf924b99
+        - subnet-0cecac3e2a4cd595f
+        - subnet-092c3fb284c03eb81
+      Type: application
+
+  myCfnLinuxSecGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: cfn-linux-sec-group
+      GroupDescription: "Cloud formation Linux security group"
+      VpcID: !Ref vpcID
+      SecurityGroupIngress:
+        - CidrIP: 0.0.0.0/0
+          FromPort: 22
+          ToPort: 22
+          IpProtocol: tcp
+          Description: "Allow SSH"
+        - CidrIP: 0.0.0.0/0
+          FromPort: 80
+          ToPort: 80
+          IpProtocol: tcp
+          Description: "Allow HTTP"
+      SecurityGroupEgress:
+        - CidrIP: 0.0.0.0/0
+          IpProtocol: -1
+          Description: "Allow all egress"
+  
+  cfnS3EC2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: cfnS3EC2Role
+      AssumeRolePolicyDocument: 
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action: "sts:AssumeRole"
+            Principal:
+              Service: "ec2.amazonaws.com"
+
+      Policies:
+        - PolicyName: "cfn-s3-ec2-read-role"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - 
+                Effect: "Allow"
+                Action: 
+                  - "s3:GetObject"
+                  - "s3:ListBucket"
+                Resource: 
+                  - !Join [ "" , [!Ref bucketArn, "/*"] ]
+  
+  myCfnLinuxInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref cfnS3EC2Role
+  

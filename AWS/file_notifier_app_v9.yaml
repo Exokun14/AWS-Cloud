@@ -1,0 +1,63 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: "Cloud native application to notify users when a file is created in an S3 Bucket via SES"
+
+Parameters: 
+  bucketName:
+    Description: "S3 Bucket Name"
+    Type: String
+    Default: "jcj-aws-file-notifier-app"
+
+  LambdaSrcS3Bucket:
+    Description: "The S3 Bucket of our Lambda code."
+    Type: String
+    Default: "jcj-aws-my-bucket"
+
+  NotifierLambdaSrcS3Key:
+    Description: "The S3 object Key of our Lambda Notifier code."
+    Type: String
+    Default: "lambda_src/file_notifier.zip"
+
+Resources: 
+  myS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties: 
+      BucketName: !Ref bucketName
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: "s3:ObjectCreated:Put"
+            Function: !GetAtt cfnFileCreateNotifierFunction.Arn
+  
+  cfnFileCreateNotifierFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: "CFN File Create Notifier Lambda"
+      FunctionName: cfnFileCreateNotifierFunction
+      Role: arn:aws:iam::971422705459:role/S3FileCreateNotifierRole
+      Handler: file_notifier.lambda_handler
+      Runtime: python3.12
+      Code:
+        S3Bucket: !Ref LambdaSrcS3Bucket
+        S3Key: !Ref NotifierLambdaSrcS3Key
+  
+  lambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !GetAtt cfnFileCreateNotifierFunction.Arn
+      Principal: s3.amazonaws.com
+      SourceArn: !GetAtt myS3Bucket.Arn
+  
+  sqsQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: "file-notifier-app-queue"
+      RedrivePolicy: 
+        deadLetterTargetArn: !GetAtt sqsDeadLetterQueue.Arn
+        maxReceiveCount: 5
+      VisibilityTimeout: 60
+  
+  sqsDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: "file-notifier-app-queue-dlq"
+      VisibilityTimeout: 60
